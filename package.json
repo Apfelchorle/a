@@ -1,7 +1,33 @@
 {
-  "name": "hayase-extensions",
-  "version": "1.0.7",
-  "description": "Extensions for Hayase",
-  "main": "index.json",
-  "types": "index.d.ts"
+  "name": "apfelchorle-a-fixed",
+  "version": "2.0.0",
+  "description": "Torrent scraper library with Web Worker support - Fixed version",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./abstract": "./abstract.js",
+    "./animetosho": "./animetosho.js",
+    "./nyaasi": "./nyaasi.js",
+    "./piratebay": "./piratebay.js",
+    "./seadex": "./seadex.js",
+    "./worker": "./torrent-worker.js"
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "torrent",
+    "scraper",
+    "web-worker",
+    "anime",
+    "nyaa",
+    "piratebay",
+    "seadex"
+  ],
+  "author": "Apfelchorle (Fixed by Claude)",
+  "license": "GPL-3.0",
+  "engines": {
+    "node": ">=14.0.0"
+  }
 }

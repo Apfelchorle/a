@@ -1,46 +1,61 @@
-import AbstractSource from './abstract.js'
+// SeaDAX anime torrent scraper with Web Worker support
+import TorrentScraper from './abstract.js';
 
-export default new class SeaDex extends AbstractSource {
-  url = atob('aHR0cHM6Ly9yZWxlYXNlcy5tb2UvYXBpL2NvbGxlY3Rpb25zL2VudHJpZXMvcmVjb3Jkcw==')
+class SeaDex extends TorrentScraper {
+  constructor() {
+    super('SeaDex');
+    this.baseURL = 'https://releases.moe/api/v1/torrents';
+  }
 
-  /** @type {import('./').SearchFunction} */
-  async single ({ anilistId, titles, episodeCount }) {
-    if (!anilistId) throw new Error('No anilistId provided')
-    if (!titles?.length) throw new Error('No titles provided')
-    const res = await fetch(`${this.url}?page=1&perPage=1&filter=alID%3D%22${anilistId}%22&skipTotal=1&expand=trs`)
+  async search(query, options = {}) {
+    try {
+      this.validateQuery(query);
 
-    /** @type {import('./types').Seadex} */
-    const { items } = await res.json()
+      const params = new URLSearchParams({
+        'q': query,
+        'limit': options.limit || 50,
+        'offset': options.offset || 0
+      });
 
-    if (!items[0]?.expand?.trs?.length) return []
+      const url = `${this.baseURL}?${params.toString()}`;
+      this.log(`Searching: ${query}`);
 
-    const { trs } = items[0].expand
+      const response = await this.safeFetch(url);
+      const data = await response.json();
 
-    return trs.filter(({ infoHash, files }) => {
-      if (infoHash === '<redacted>') return false
-      if (episodeCount && episodeCount !== 1 && files.length === 1) return false // skip sigle file spam for now
-      return true
-    }).map(torrent => {
-      return {
-        hash: torrent.infoHash,
-        link: torrent.infoHash,
-        title: torrent.files.length === 1 ? torrent.files[0].name : `[${torrent.releaseGroup}] ${titles[0]} ${torrent.dualAudio ? 'Dual Audio' : ''}`,
-        size: torrent.files.reduce((prev, curr) => prev + curr.length, 0),
-        type: torrent.isBest ? 'best' : 'alt',
-        date: new Date(torrent.created),
-        seeders: 0,
-        leechers: 0,
-        downloads: 0,
-        accuracy: 'high'
+      if (!data || !Array.isArray(data.torrents)) {
+        this.log('Invalid response format', 'warn');
+        return [];
       }
-    })
+
+      return this.formatResults(data.torrents);
+    } catch (error) {
+      this.log(`Search error: ${error.message}`, 'error');
+      throw error;
+    }
   }
 
-  batch = this.single
-  movie = this.single
-
-  async test () {
-    const res = await fetch(this.url)
-    return res.ok
+  formatResults(torrents) {
+    return torrents.map(item => ({
+      id: item.id || '',
+      title: item.title || item.name || '',
+      link: item.link || '',
+      torrent: item.torrent_url || item.torrent || '',
+      magnet: item.magnet_uri || item.magnet || '',
+      seeders: item.seeders || item.seeds || 0,
+      leechers: item.leechers || item.peers || 0,
+      size: item.size || item.total_size || 0,
+      date: item.pub_date || item.created_at || '',
+      quality: item.quality || item.resolution || '',
+      encoder: item.encoder || item.uploader || '',
+      source: 'SeaDex'
+    })).filter(item => item.title);
   }
-}()
+}
+
+// Export for both CommonJS and ES modules
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = SeaDex;
+}
+
+export default SeaDex;

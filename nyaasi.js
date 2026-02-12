@@ -1,77 +1,64 @@
-import AbstractSource from './abstract.js'
+// Nyaa.si anime torrent scraper with Web Worker support
+import TorrentScraper from './abstract.js';
 
-export default new class NyaaSi extends AbstractSource {
-  base = 'https://torrent-search-api-livid.vercel.app/api/nyaasi/'
-
-  /** @type {import('./').SearchFunction} */
-  async single({ titles, episode }) {
-    if (!titles?.length) return []
-
-    const query = this.buildQuery(titles[0], episode)
-    const url = `${this.base}${encodeURIComponent(query)}`
-
-    const res = await fetch(url)
-    const data = await res.json()
-
-    if (!Array.isArray(data)) return []
-
-    return this.map(data)
+class NyaaSi extends TorrentScraper {
+  constructor() {
+    super('NyaaSi');
+    this.baseURL = 'https://nyaa.si/api/v1/search';
   }
 
-  /** @type {import('./').SearchFunction} */
-  batch = this.single
-  movie = this.single
-
-  buildQuery(title, episode) {
-    let query = title.replace(/[^\w\s-]/g, ' ').trim()
-    if (episode) query += ` ${episode.toString().padStart(2, '0')}`
-    return query
-  }
-
-  map(data) {
-    return data.map(item => {
-      const hash = item.Magnet?.match(/btih:([a-fA-F0-9]+)/)?.[1] || ''
-
-      return {
-        title: item.Name || '',
-        link: item.Magnet || '',
-        hash,
-        seeders: parseInt(item.Seeders || '0'),
-        leechers: parseInt(item.Leechers || '0'),
-        downloads: parseInt(item.Downloads || '0'),
-        size: this.parseSize(item.Size),
-        date: new Date(item.DateUploaded),
-        verified: false,
-        type: 'alt',
-        accuracy: 'medium'
-      }
-    })
-  }
-
-  parseSize(sizeStr) {
-    const match = sizeStr.match(/([\d.]+)\s*(KiB|MiB|GiB|KB|MB|GB)/i)
-    if (!match) return 0
-
-    const value = parseFloat(match[1])
-    const unit = match[2].toUpperCase()
-
-    switch (unit) {
-      case 'KIB':
-      case 'KB': return value * 1024
-      case 'MIB':
-      case 'MB': return value * 1024 * 1024
-      case 'GIB':
-      case 'GB': return value * 1024 * 1024 * 1024
-      default: return 0
-    }
-  }
-
-  async test() {
+  async search(query, options = {}) {
     try {
-      const res = await fetch(this.base + 'one piece')
-      return res.ok
-    } catch {
-      return false
+      this.validateQuery(query);
+
+      const params = new URLSearchParams({
+        q: query,
+        limit: options.limit || 50,
+        offset: options.offset || 0,
+        sort_by: options.sort || 'downloads',
+        order: options.order || 'desc'
+      });
+
+      const url = `${this.baseURL}?${params.toString()}`;
+      this.log(`Searching: ${query}`);
+
+      const response = await this.safeFetch(url);
+      const data = await response.json();
+
+      if (!data || !Array.isArray(data.results)) {
+        this.log('Invalid response format', 'warn');
+        return [];
+      }
+
+      return this.formatResults(data.results);
+    } catch (error) {
+      this.log(`Search error: ${error.message}`, 'error');
+      throw error;
     }
   }
-}()
+
+  formatResults(results) {
+    return results.map(item => ({
+      id: item.id || '',
+      title: item.name || item.title || '',
+      link: `https://nyaa.si/view/${item.id}`,
+      torrent: item.torrent_url || '',
+      magnet: item.magnet_uri || item.magnet || '',
+      seeders: item.seeders || 0,
+      leechers: item.leechers || 0,
+      downloads: item.downloads || 0,
+      size: item.filesize || item.size || 0,
+      date: item.publish_date || item.created_time || '',
+      category: item.category || '',
+      submitter: item.submitter || '',
+      source: 'NyaaSi'
+    })).filter(item => item.title);
+  }
+}
+
+// Export for both CommonJS and ES modules
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = NyaaSi;
+}
+
+export default NyaaSi;

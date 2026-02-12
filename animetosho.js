@@ -1,81 +1,60 @@
-import AbstractSource from './abstract.js'
+// AnimeToSho torrent scraper with Web Worker support
+import TorrentScraper from './abstract.js';
 
-const QUALITIES = ['1080', '720', '540', '480']
-
-export default new class Tosho extends AbstractSource {
-  url = atob('aHR0cHM6Ly9mZWVkLmFuaW1ldG9zaG8ub3JnL2pzb24=')
-
-  buildQuery ({ resolution, exclusions }) {
-    const base = `&qx=1&q=!("${exclusions.join('"|"')}")`
-    if (!resolution) return base
-
-    const excl = QUALITIES.filter(q => q !== resolution)
-    return base + `!(*${excl.join('*|*')}*)`
+class AnimeToSho extends TorrentScraper {
+  constructor() {
+    super('AnimeToSho');
+    this.baseURL = 'https://animetosho.org/api/v2/search/torrent';
   }
 
-  /**
-   * @param {import('./types').Tosho[]} entries
-   * @param {boolean} batch
-   * @returns {import('./').TorrentResult[]}
-   **/
-  map (entries, batch = false) {
-    return entries.map(entry => {
-      return {
-        title: entry.title || entry.torrent_name,
-        link: entry.magnet_uri,
-        seeders: (entry.seeders || 0) >= 30000 ? 0 : entry.seeders || 0,
-        leechers: (entry.leechers || 0) >= 30000 ? 0 : entry.leechers || 0,
-        downloads: entry.torrent_downloaded_count || 0,
-        hash: entry.info_hash,
-        size: entry.total_size,
-        accuracy: entry.anidb_fid ? 'high' : 'medium',
-        type: batch ? 'batch' : undefined,
-        date: new Date(entry.timestamp * 1000)
+  async search(query, options = {}) {
+    try {
+      this.validateQuery(query);
+      
+      const params = new URLSearchParams({
+        q: query,
+        limit: options.limit || 50,
+        offset: options.offset || 0,
+        sort: options.sort || 'update_date',
+        order: options.order || 'desc'
+      });
+
+      const url = `${this.baseURL}?${params.toString()}`;
+      this.log(`Searching: ${query}`);
+
+      const response = await this.safeFetch(url);
+      const data = await response.json();
+
+      if (!data || !Array.isArray(data)) {
+        this.log('Invalid response format', 'warn');
+        return [];
       }
-    })
+
+      return this.formatResults(data);
+    } catch (error) {
+      this.log(`Search error: ${error.message}`, 'error');
+      throw error;
+    }
   }
 
-  /** @type {import('./').SearchFunction} */
-  async single ({ anidbEid, resolution, exclusions }) {
-    if (!anidbEid) throw new Error('No anidbEid provided')
-    const query = this.buildQuery({ resolution, exclusions })
-    const res = await fetch(this.url + '?eid=' + anidbEid + query)
-
-    /** @type {import('./types').Tosho[]} */
-    const data = await res.json()
-
-    if (data.length) return this.map(data)
-    return []
+  formatResults(data) {
+    return data.map(item => ({
+      title: item.title || '',
+      link: item.link || '',
+      torrent: item.torrent_url || '',
+      magnet: item.magnet_uri || '',
+      seeders: item.seeders || 0,
+      leechers: item.leechers || 0,
+      size: item.total_size || 0,
+      date: item.release_date || item.update_date || '',
+      source: 'AnimeToSho'
+    })).filter(item => item.title);
   }
+}
 
-  /** @type {import('./').SearchFunction} */
-  async batch ({ anidbAid, resolution, episodeCount, exclusions }) {
-    if (!anidbAid) throw new Error('No anidbAid provided')
-    if (episodeCount == null) throw new Error('No episodeCount provided')
-    const query = this.buildQuery({ resolution, exclusions })
-    const res = await fetch(this.url + '?order=size-d&aid=' + anidbAid + query)
+// Export for both CommonJS and ES modules
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = AnimeToSho;
+}
 
-    const data = /** @type {import('./types').Tosho[]} */(await res.json()).filter(entry => entry.num_files >= episodeCount)
-
-    if (data.length) return this.map(data, true)
-    return []
-  }
-
-  /** @type {import('./').SearchFunction} */
-  async movie ({ anidbAid, resolution, exclusions }) {
-    if (!anidbAid) throw new Error('No anidbAid provided')
-    const query = this.buildQuery({ resolution, exclusions })
-    const res = await fetch(this.url + '?aid=' + anidbAid + query)
-
-    /** @type {import('./types').Tosho[]} */
-    const data = await res.json()
-
-    if (data.length) return this.map(data)
-    return []
-  }
-
-  async test () {
-    const res = await fetch(this.url)
-    return res.ok
-  }
-}()
+export default AnimeToSho;
